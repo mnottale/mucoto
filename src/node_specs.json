@@ -1,0 +1,95 @@
+{
+  "alsa_in": {
+    "description": "Alsa audio capture, clocks the whole graph",
+    "singleton": true,
+    "inputs": 0,
+    "outputs": -1,
+    "params": [
+      {"name": "rate", "type": "float", "min": 8000, "max": 192000, "default": 48000, "description": "sample rate (Hz)"},
+      {"name": "channels", "type": "float", "min": 1, "max": 8, "default": 2, "description": "captured channels, one output per channel"},
+      {"name": "buffer_size", "type": "float", "min": 32, "max": 8192, "default": 512, "description": "period size in frames"}
+    ],
+    "sparams": [
+      {"name": "device", "default": "default", "description": "alsa device name"},
+      {"name": "format", "default": "S16_LE", "values": ["S16_LE", "S32_LE"], "description": "sample format"}
+    ]
+  },
+  "alsa_out": {
+    "description": "Alsa audio playback, 1 or 2 input channels",
+    "inputs": 2,
+    "outputs": 0,
+    "params": [],
+    "sparams": [
+      {"name": "device", "default": "default", "description": "alsa device name"},
+      {"name": "format", "default": "S16_LE", "values": ["S16_LE", "S32_LE"], "description": "sample format"}
+    ]
+  },
+  "player": {
+    "description": "Sound bank player, plays named samples from the shared bank",
+    "inputs": 0,
+    "outputs": 1,
+    "params": [
+      {"name": "gain", "type": "float", "min": 0, "max": 4, "default": 1, "description": "output gain"}
+    ],
+    "sparams": []
+  },
+  "mixer": {
+    "description": "Sums all inputs weighted by their gains",
+    "inputs": -1,
+    "outputs": 1,
+    "params": [],
+    "dynamicParams": {"prefix": "gain_", "min": 0, "max": 4, "default": 1, "description": "gain of input N"},
+    "sparams": []
+  },
+  "recorder": {
+    "description": "Stores incoming audio for later use",
+    "inputs": 1,
+    "outputs": 0,
+    "params": [
+      {"name": "duration", "type": "float", "min": 1, "max": 300, "default": 30, "description": "max buffer duration (s)"},
+      {"name": "enabled", "type": "float", "min": 0, "max": 1, "default": 0, "description": "recording active"},
+      {"name": "clear", "type": "float", "min": 0, "max": 1, "default": 0, "description": "set to 1 to clear data"}
+    ],
+    "sparams": []
+  },
+  "gain": {
+    "description": "Simple gain",
+    "inputs": 1,
+    "outputs": 1,
+    "params": [
+      {"name": "gain", "type": "float", "min": 0, "max": 4, "default": 1, "description": "gain"}
+    ],
+    "sparams": []
+  },
+  "quantizer": {
+    "description": "Bit depth and rate crusher, for that cool 8bit effect",
+    "inputs": 1,
+    "outputs": 1,
+    "params": [
+      {"name": "bits", "type": "float", "min": 1, "max": 16, "default": 8, "description": "bit depth"},
+      {"name": "rate_divide", "type": "float", "min": 1, "max": 64, "default": 1, "description": "sample rate divider"}
+    ],
+    "sparams": []
+  },
+  "distortion": {
+    "description": "Tanh waveshaping distortion",
+    "inputs": 1,
+    "outputs": 1,
+    "params": [
+      {"name": "drive", "type": "float", "min": 1, "max": 100, "default": 10, "description": "drive amount"},
+      {"name": "mix", "type": "float", "min": 0, "max": 1, "default": 1, "description": "dry/wet mix"}
+    ],
+    "sparams": []
+  },
+  "reverb": {
+    "description": "Schroeder reverberator",
+    "inputs": 1,
+    "outputs": 1,
+    "params": [
+      {"name": "mix", "type": "float", "min": 0, "max": 1, "default": 0.3, "description": "dry/wet mix"},
+      {"name": "decay", "type": "float", "min": 0, "max": 0.98, "default": 0.7, "description": "tail length"},
+      {"name": "damp", "type": "float", "min": 0, "max": 1, "default": 0.4, "description": "high frequency damping"}
+    ],
+    "sparams": []
+  }
+}
