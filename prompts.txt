@@ -9,3 +9,28 @@ can you check error codes on the alsa calls in sendToOutput()?
 that was it, all MIDI write fail with error "no such device"
 
 Some of my MIDI USB interfaces are both input and output, but apparently the code can't open them both ways, can you fix that?
+
+Audio is making cracking sound, but the program takes little CPU. Even at high (8192) buffer sizes. Maybe something is wrong with the audio design having both write and read synchronous?
+
+The audio loop sometime freezes, I'm suspecting a deadlock. Maybe this backtrace can help:
+#3  0x0000000000450452 in __gthread_mutex_lock (__mutex=0x7fff8cff8cc0) at /home/user/gcc16/include/c++/16.2.0/x86_64-pc-linux-gnu/bits/gthr-default.h:795
+#4  std::mutex::lock (this=<optimized out>) at /home/user/gcc16/include/c++/16.2.0/bits/std_mutex.h:116
+#5  std::lock_guard<std::mutex>::lock_guard (this=<synthetic pointer>, __m=...) at /home/user/gcc16/include/c++/16.2.0/bits/std_mutex.h:276
+#6  operator() (__closure=<optimized out>, i=<optimized out>) at audio.cc:353
+#7  std::__invoke_impl<void, audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)>&, int> (__f=...)
+    at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:63
+#8  std::__invoke_r<void, audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)>&, int> (__fn=...)
+    at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:113
+#9  std::_Function_handler<void(int), audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)> >::_M_invoke(const std::_Any_data &, int &&) (__functor=..., __args#0=<optimized out>) at /home/user/gcc16/include/c++/16.2.0/bits/std_function.h:295
+#10 0x0000000000444374 in std::function<void (int)>::operator()(int) const (this=<optimized out>, __args#0=<optimized out>) at /home/user/gcc16/include/c++/16.2.0/bits/std_function.h:581
+#11 operator() (__closure=<optimized out>) at audio.cc:351
+#12 std::__invoke_impl<void, audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)>::<lambda()>&> (__f=...)
+    at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:63
+#13 std::__invoke_r<void, audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)>::<lambda()>&> (__fn=...)
+    at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:113
+#14 std::_Function_handler<void(), audio::Engine::runCycle(const std::vector<std::shared_ptr<audio::Node> >&, const std::vector<audio::Link>&, size_t)::<lambda(int)>::<lambda()> >::_M_invoke(const std::_Any_data &) (__functor=...) at /home/user/gcc16/include/c++/16.2.0/bits/std_function.h:295
+#15 0x000000000044c1e8 in std::function<void ()>::operator()() const (this=0x7fffab6fde20) at /home/user/gcc16/include/c++/16.2.0/bits/std_function.h:581
+#16 operator() (__closure=0x4926a8) at audio.cc:199
+#17 std::__invoke_impl<void, audio::ThreadPool::start(int)::<lambda()> > (__f=...) at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:63
+#18 std::__invoke<audio::ThreadPool::start(int)::<lambda()> > (__fn=...) at /home/user/gcc16/include/c++/16.2.0/bits/invoke.h:98
+#19 std::thread::_Invoker<std::tuple<audio::ThreadPool::start(int)::<lambda()> > >::_M_invoke<0> (this=0x4926a8) at /home/user/gcc16/include/c++/16.2.0/bits/std_thread.h:303

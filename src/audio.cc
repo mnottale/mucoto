@@ -295,8 +295,11 @@ namespace audio
                 runCycle(nodes, links, nFrames);
         }
     }
-    void Engine::runCycle(std::vector<std::shared_ptr<Node>> const& nodes,
-                          std::vector<Link> const& links, size_t frames)
+    // Shared between the clock thread and the pool tasks of one cycle. Heap
+    // allocated and kept alive by the tasks themselves (shared_ptr captured by
+    // value) so a straggling task can never touch a dead stack frame, even if
+    // the clock thread abandons the cycle.
+    struct Engine::CycleState
     {
         struct NodeState
         {
@@ -304,12 +307,51 @@ namespace audio
             std::vector<Buffer const*> inputs;
             std::atomic<int> pending = 0;
             std::vector<int> dependents; // indices into states
+            std::atomic<bool> finished = false;
         };
-        std::vector<NodeState> states(nodes.size());
+        std::vector<NodeState> states;
+        size_t frames = 0;
+        std::mutex mutex;
+        std::condition_variable cv;
+        size_t done = 0;
+    };
+    void Engine::runCycleNode(std::shared_ptr<CycleState> cycle, int i)
+    {
+        auto& st = cycle->states[i];
+        // alsa input was already processed inline by the clock thread
+        if (!dynamic_cast<AlsaInputNode*>(st.node.get()))
+        {
+            try
+            {
+                st.node->process(st.inputs, cycle->frames);
+            }
+            catch (std::exception const& e)
+            {
+                std::cerr << "node " << st.node->name() << ": " << e.what() << std::endl;
+            }
+            catch (...)
+            {
+                std::cerr << "node " << st.node->name() << ": unknown error" << std::endl;
+            }
+        }
+        for (int d: st.dependents)
+            if (--cycle->states[d].pending == 0)
+                _pool.post([this, cycle, d] { runCycleNode(cycle, d); });
+        std::lock_guard l(cycle->mutex);
+        st.finished = true;
+        cycle->done++;
+        cycle->cv.notify_one();
+    }
+    void Engine::runCycle(std::vector<std::shared_ptr<Node>> const& nodes,
+                          std::vector<Link> const& links, size_t frames)
+    {
+        auto cycle = std::make_shared<CycleState>();
+        cycle->frames = frames;
+        cycle->states = std::vector<CycleState::NodeState>(nodes.size());
         std::map<std::string, int> index;
         for (size_t i = 0; i < nodes.size(); i++)
         {
-            states[i].node = nodes[i];
+            cycle->states[i].node = nodes[i];
             index[nodes[i]->name()] = i;
         }
         for (auto const& l: links)
@@ -318,48 +360,31 @@ namespace audio
             auto to = index.find(l.to);
             if (from == index.end() || to == index.end())
                 continue;
-            auto& src = states[from->second];
-            auto& dst = states[to->second];
+            auto& src = cycle->states[from->second];
+            auto& dst = cycle->states[to->second];
             if ((int)dst.inputs.size() <= l.toInput)
                 dst.inputs.resize(l.toInput + 1, nullptr);
             dst.inputs[l.toInput] = &src.node->output(l.fromChannel);
             dst.pending++;
             src.dependents.push_back(to->second);
         }
-        std::mutex mutex;
-        std::condition_variable cv;
-        size_t done = 0;
-        std::function<void(int)> runNode = [&](int i) {
-            auto& st = states[i];
-            // alsa input was already processed inline by the clock thread
-            if (!dynamic_cast<AlsaInputNode*>(st.node.get()))
-            {
-                try
-                {
-                    st.node->process(st.inputs, frames);
-                }
-                catch (std::exception const& e)
-                {
-                    std::cerr << "node " << st.node->name() << ": " << e.what() << std::endl;
-                }
-            }
-            std::vector<int> ready;
-            for (int d: st.dependents)
-                if (--states[d].pending == 0)
-                    ready.push_back(d);
-            for (int d: ready)
-                _pool.post([&, d] { runNode(d); });
-            {
-                std::lock_guard l(mutex);
-                done++;
-                cv.notify_one();
-            }
-        };
-        for (size_t i = 0; i < states.size(); i++)
-            if (states[i].pending == 0)
-                _pool.post([&, i] { runNode((int)i); });
-        std::unique_lock l(mutex);
-        cv.wait(l, [&] { return done == states.size(); });
+        for (size_t i = 0; i < cycle->states.size(); i++)
+            if (cycle->states[i].pending == 0)
+                _pool.post([this, cycle, i] { runCycleNode(cycle, (int)i); });
+        // Watchdog: a node hanging (typically in a blocking device call) must
+        // not freeze the audio loop forever. Stragglers finish harmlessly on
+        // the heap-allocated cycle state.
+        std::unique_lock l(cycle->mutex);
+        if (!cycle->cv.wait_for(l, std::chrono::seconds(2),
+                                [&] { return cycle->done == cycle->states.size(); }))
+        {
+            std::string stuck;
+            for (auto& st: cycle->states)
+                if (!st.finished)
+                    stuck += st.node->name() + " ";
+            std::cerr << "[audio] cycle stalled, abandoning (unfinished nodes: "
+                      << stuck << ")" << std::endl;
+        }
     }
     std::shared_ptr<Node> Engine::createNode(std::string const& type, std::string const& name)
     {
@@ -425,8 +450,23 @@ namespace audio
                 snd_pcm_close(pcm);
                 return nullptr;
             }
+            // wake snd_pcm_wait once a full period is available
+            snd_pcm_sw_params_t* sw;
+            snd_pcm_sw_params_alloca(&sw);
+            snd_pcm_sw_params_current(pcm, sw);
+            snd_pcm_sw_params_set_avail_min(pcm, sw, period);
+            snd_pcm_sw_params(pcm, sw);
             snd_pcm_prepare(pcm);
+            // capture only delivers data once started (playback auto-starts
+            // on write)
+            if (dir == SND_PCM_STREAM_CAPTURE)
+                snd_pcm_start(pcm);
             return pcm;
+        }
+        double nowSeconds()
+        {
+            return std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
         }
     }
 
@@ -473,16 +513,41 @@ namespace audio
         auto format = parseFormat(stringParam("format", "S16_LE"));
         int bytes = formatBytes(format);
         _raw.resize(frames * channels * bytes);
-        auto r = snd_pcm_readi((snd_pcm_t*)_pcm, _raw.data(), frames);
-        if (r < 0)
+        // bounded wait instead of a readi that can block forever when the
+        // device stops delivering (usb reset, suspend...)
+        int rate = (int)param("rate", 48000);
+        int timeoutMs = std::max(1000l, 3000l * (long)frames / std::max(1, rate));
+        int w = snd_pcm_wait((snd_pcm_t*)_pcm, timeoutMs);
+        if (w == 0)
         {
-            r = snd_pcm_recover((snd_pcm_t*)_pcm, r, 1);
-            if (r < 0)
+            double now = nowSeconds();
+            if (now - _lastErrLog > 1)
+            {
+                _lastErrLog = now;
+                std::cerr << "[audio] " << name() << " read timeout, reopening device"
+                          << std::endl;
+            }
+            closeDevice();
+            return;
+        }
+        if (w < 0)
+        {
+            if (snd_pcm_recover((snd_pcm_t*)_pcm, w, 1) < 0)
             {
                 closeDevice();
                 return;
             }
-            r = snd_pcm_readi((snd_pcm_t*)_pcm, _raw.data(), frames);
+            snd_pcm_start((snd_pcm_t*)_pcm); // recover leaves capture stopped
+        }
+        auto r = snd_pcm_readi((snd_pcm_t*)_pcm, _raw.data(), frames);
+        if (r < 0)
+        {
+            r = snd_pcm_recover((snd_pcm_t*)_pcm, r, 1);
+            if (r >= 0)
+            {
+                snd_pcm_start((snd_pcm_t*)_pcm);
+                r = snd_pcm_readi((snd_pcm_t*)_pcm, _raw.data(), frames);
+            }
             if (r < 0)
             {
                 closeDevice();
@@ -532,6 +597,20 @@ namespace audio
         _pcm = openPcm(stringParam("device", "default"), SND_PCM_STREAM_PLAYBACK, format,
                        (unsigned)_engine.rate(), (unsigned)channels,
                        (snd_pcm_uframes_t)_engine.frames());
+        prefillSilence();
+    }
+    void AlsaOutputNode::prefillSilence()
+    {
+        if (!_pcm)
+            return;
+        snd_pcm_uframes_t bufSize = 0, period = 0;
+        snd_pcm_get_params((snd_pcm_t*)_pcm, &bufSize, &period);
+        long fill = (long)bufSize - (long)period;
+        if (fill <= 0)
+            return;
+        auto format = parseFormat(stringParam("format", "S16_LE"));
+        std::vector<char> zeros(fill * _channels * formatBytes(format), 0);
+        snd_pcm_writei((snd_pcm_t*)_pcm, zeros.data(), fill);
     }
     void AlsaOutputNode::process(std::vector<Buffer const*> const& inputs, size_t frames)
     {
@@ -569,12 +648,41 @@ namespace audio
             }
             c++;
         }
+        // bounded wait for buffer space, a hung device must not freeze the
+        // processing cycle
+        int timeoutMs = std::max(1000l, 3000l * (long)frames / std::max(1, _engine.rate()));
+        int w = snd_pcm_wait((snd_pcm_t*)_pcm, timeoutMs);
+        if (w == 0)
+        {
+            double now = nowSeconds();
+            if (now - _lastXrunLog > 1)
+            {
+                _lastXrunLog = now;
+                std::cerr << "[audio] " << name() << " write timeout, reopening device"
+                          << std::endl;
+            }
+            closeDevice();
+            return;
+        }
         auto r = snd_pcm_writei((snd_pcm_t*)_pcm, _raw.data(), frames);
         if (r < 0)
         {
+            auto now = nowSeconds();
+            if (now - _lastXrunLog > 1)
+            {
+                _lastXrunLog = now;
+                std::cerr << "[audio] " << name() << " write error: "
+                          << snd_strerror(r) << " (recovering)" << std::endl;
+            }
             r = snd_pcm_recover((snd_pcm_t*)_pcm, r, 1);
             if (r >= 0)
+            { // recover leaves an empty buffer: prime it again or the next
+              // write underruns immediately and we crackle forever
+                prefillSilence();
                 snd_pcm_writei((snd_pcm_t*)_pcm, _raw.data(), frames);
+            }
+            else
+                closeDevice(); // reopened (and prefilled) next cycle
         }
     }
 

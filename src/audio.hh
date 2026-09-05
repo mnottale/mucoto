@@ -128,9 +128,11 @@ namespace audio
         /// Create a node of the given registered type.
         std::shared_ptr<Node> createNode(std::string const& type, std::string const& name);
     private:
+        struct CycleState;
         void runLoop();
         void runCycle(std::vector<std::shared_ptr<Node>> const& nodes,
                       std::vector<Link> const& links, size_t frames);
+        void runCycleNode(std::shared_ptr<CycleState> cycle, int i);
         Graph _graph;
         SampleBank _bank;
         ThreadPool _pool;
@@ -160,6 +162,7 @@ namespace audio
         std::vector<char> _raw;
         std::atomic<bool> _open = false;
         std::atomic<bool> _reopen = false;
+        double _lastErrLog = 0;
     };
 
     class AlsaOutputNode: public Node
@@ -176,11 +179,17 @@ namespace audio
     private:
         void ensureOpen(int channels);
         void closeDevice();
+        /// Fill the playback buffer with silence so we run with slack:
+        /// the graph produces exactly one period per capture period, without
+        /// prefill the stream sits at ~one period of fill and any jitter
+        /// underruns it.
+        void prefillSilence();
         Engine& _engine;
         void* _pcm = nullptr;
         int _channels = 0;
         std::vector<char> _raw;
         std::atomic<bool> _reopen = false;
+        double _lastXrunLog = 0;
     };
 
     class SoundBankPlayerNode: public Node
