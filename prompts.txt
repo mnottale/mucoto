@@ -1,0 +1,11 @@
+We're building a C++26 / WebUI music edition software with audio and MIDI alsa support. Full specs are in highlighted notes.md .
+
+Bug: I have one alsa in and one alsa out node, when I change the device on one and click on the other node, its device is also changed.
+
+Audio path is working, MIDI is not apparently, can I have a CLI triggerd debug flag that will dump incoming MIDI messages and where they get sent to?
+
+can you check error codes on the alsa calls in sendToOutput()?
+
+that was it, all MIDI write fail with error "no such device"
+
+Some of my MIDI USB interfaces are both input and output, but apparently the code can't open them both ways, can you fix that?
