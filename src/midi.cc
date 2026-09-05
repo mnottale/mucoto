@@ -1,6 +1,7 @@
 #include "midi.hh"
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <functional>
@@ -384,12 +385,12 @@ namespace midi
         {
             if (in.connected)
                 snd_seq_disconnect_from((snd_seq_t*)_seq, _port, in.srcClient, in.srcPort);
-            if (in.ledClient >= 0)
-                snd_seq_disconnect_to((snd_seq_t*)_seq, _port, in.ledClient, in.ledPort);
+            if (in.looper && in.ledClient >= 0)
+                unsubscribeTo(in.ledClient, in.ledPort);
         }
         for (auto& [id, out]: _outputs)
             if (out.connected)
-                snd_seq_disconnect_to((snd_seq_t*)_seq, _port, out.dstClient, out.dstPort);
+                unsubscribeTo(out.dstClient, out.dstPort);
         _inputs = inputs;
         _outputs = outputs;
         _bindings = bindings;
