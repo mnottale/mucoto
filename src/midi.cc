@@ -24,6 +24,10 @@ namespace midi
         const int colorRed = 5;
         const double holdDelay = 1.0; ///< seconds before release-to-record
         const double doubleTap = 0.6; ///< double tap window, seconds
+        // bottom grid row (notes 11-18 in programmer mode) is sacrificed as a
+        // beat indicator and does not act as looper pads
+        const int tempoRowBase = 11;
+        const int tempoRowSize = 8;
 
         std::string displayName(snd_seq_client_info_t* ci, snd_seq_port_info_t* pi)
         {
@@ -361,6 +365,18 @@ namespace midi
             return 0;
         return (now() - _rollStart) * _bpm / 240.;
     }
+    long MidiEngine::beatsAt(double t) const
+    {
+        // synced to the roll start while rolling (loop start = downbeat),
+        // free-running on the engine clock otherwise
+        double start = _rollStart > 0 ? _rollStart : 0;
+        return (long)((t - start) * _bpm / 60.);
+    }
+    long MidiEngine::beats() const
+    {
+        std::lock_guard l(_mutex);
+        return beatsAt(now());
+    }
 
     // ---------- state access ----------
 
@@ -580,6 +596,8 @@ namespace midi
     {
         if (!in.looper || in.ledClient < 0)
             return;
+        if (note >= tempoRowBase && note < tempoRowBase + tempoRowSize)
+            return; // tempo row is not painted from pad state
         std::vector<unsigned char> spec{0x03};
         switch (pad.st)
         {
@@ -607,10 +625,27 @@ namespace midi
         }
         sendSysex(in.ledClient, in.ledPort, spec);
     }
+    void MidiEngine::paintTempoRow(InputCfg& in, int led, bool downbeat)
+    {
+        if (!in.looper || in.ledClient < 0)
+            return;
+        std::vector<unsigned char> spec{0x03};
+        for (int i = 0; i < tempoRowSize; i++)
+        {
+            unsigned char color = 0;
+            if (led < 0)
+                color = i == 0 ? 1 : 0; // idle: dim marker on the first led
+            else if (i == led)
+                color = downbeat ? colorWhite : 21;
+            spec.insert(spec.end(), {0, (unsigned char)(tempoRowBase + i), color});
+        }
+        sendSysex(in.ledClient, in.ledPort, spec);
+    }
     void MidiEngine::refreshAllLeds(InputCfg& in)
     {
         for (auto const& [note, pad]: in.pads)
             updateLed(in, note, pad);
+        in.tempoLed = -1; // scheduler repaints the tempo row right away
     }
 
     // ---------- looper pad state machine ----------
@@ -952,6 +987,13 @@ namespace midi
         }
         if (in->looper)
         {
+            if ((type == 0x90 || type == 0x80)
+                && d1 >= tempoRowBase && d1 < tempoRowBase + tempoRowSize)
+            {
+                if (_debug)
+                    std::cerr << dbg << " -> ignored (tempo row)" << std::endl;
+                return;
+            }
             if (type == 0x90)
             {
                 if (_debug)
@@ -1062,6 +1104,16 @@ namespace midi
                 _rollStart = t;
             else if (!anyPlaying)
                 _rollStart = 0;
+            // tempo row: always step one led per beat
+            long beats = beatsAt(t);
+            int tempoState = beats % tempoRowSize;
+            bool downbeat = beats % 4 == 0;
+            for (auto& [id, in]: _inputs)
+                if (in.looper && in.connected && in.tempoLed != tempoState)
+                {
+                    paintTempoRow(in, tempoState, downbeat);
+                    in.tempoLed = tempoState;
+                }
             if (t - _lastRescan > 2)
             {
                 _lastRescan = t;

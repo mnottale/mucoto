@@ -77,6 +77,7 @@ namespace midi
         int srcClient = -1, srcPort = -1;
         int ledClient = -1, ledPort = -1; ///< write side of the pad device
         bool connected = false;
+        int tempoLed = -1; ///< painted tempo row state (-1 force, -2 idle, 0-7 beat)
     };
 
     struct OutputCfg
@@ -140,6 +141,7 @@ namespace midi
         double bpm() const;
         bool rolling() const;
         double measures() const; ///< current measure position (4/4), 0 when idle
+        long beats() const; ///< metronome beat count, free-running when idle
 
         // state access (used by the REST layer and save/load)
         std::map<int, InputCfg> inputs() const;
@@ -155,6 +157,7 @@ namespace midi
 
     private:
         double now() const;
+        long beatsAt(double t) const; ///< callers hold _mutex
         void inputLoop();
         void schedulerLoop();
         void handleEvent(void* seqEvent);
@@ -171,6 +174,7 @@ namespace midi
         void sendToOutput(int outputId, int type, int channel, int d1, int d2);
         void allNotesOff(int outputId);
         void updateLed(InputCfg& in, int note, Pad const& pad);
+        void paintTempoRow(InputCfg& in, int led, bool downbeat);
         void enterProgrammerMode(InputCfg& in);
         void refreshAllLeds(InputCfg& in);
         void sendSysex(int client, int port, std::vector<unsigned char> const& payload);

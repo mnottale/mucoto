@@ -38,3 +38,7 @@ The audio loop sometime freezes, I'm suspecting a deadlock. Maybe this backtrace
 Small UI bug: in the audio graph right pane, some "Learn" buttons are not visible because they overflow to the right.
 
 Small Feature: I need the capability to send MIDI program change messages to a given MIDI output device. Make it MIDI CC learnable. Maybe add a learnable slider for each instrument in the config page midi outputs section.
+
+Let's sacrifice the last lines (8 leds) of the looper device to mark tempo: light the row leds one at a time to mark the beat.
+
+It's working, but the metronome is only rolling when something is playing, make it always rolling.

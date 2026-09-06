@@ -292,6 +292,7 @@ struct StatusResp
     double bpm = 120;
     int rolling = 0;
     double measures = 0;
+    int beat = 0; ///< metronome beat count, free-running when idle
     int learning = 0;
     int rate = 48000;
     int padInput = -1;
@@ -408,6 +409,7 @@ public:
         auto& a = app();
         auto [pi, pn] = a.midi.currentPad();
         return StatusResp{a.midi.bpm(), a.midi.rolling() ? 1 : 0, a.midi.measures(),
+                          (int)(a.midi.beats() % 1000000),
                           a.midi.learning() ? 1 : 0, a.audio.rate(), pi, pn};
     }
     [[=Rest::route("/api/bpm/{value}")]]

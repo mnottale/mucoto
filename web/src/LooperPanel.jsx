@@ -30,6 +30,18 @@ export default function LooperPanel({ midi, graph, status, refresh, onEdit, onEr
             <div className="padgrid">
               {Array.from({ length: 8 }).map((_, r) => {
                 const row = 8 - r
+                if (row === 1) {
+                  // bottom row is the beat indicator, mirrors the leds
+                  const beat = status?.beat ?? -1
+                  const lit = beat >= 0 ? beat % 8 : -1
+                  const downbeat = beat >= 0 && beat % 4 === 0
+                  return Array.from({ length: 8 }).map((_, c) => (
+                    <div key={'t' + c} className="pad tempo" title="beat"
+                      style={{
+                        background: c === lit ? (downbeat ? '#eee' : '#3c3') : '#222',
+                      }} />
+                  ))
+                }
                 return Array.from({ length: 8 }).map((_, c) => {
                   const note = row * 10 + c + 1
                   const pad = padAt(l, note)
