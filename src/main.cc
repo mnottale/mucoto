@@ -93,7 +93,7 @@ struct OutputState
 };
 struct BindingState
 {
-    int channel = 0;
+    int channel = 0; ///< channel of the bound cc
     int cc = 0;
     std::string action;
     std::string node;
@@ -102,6 +102,7 @@ struct BindingState
     int output = -1;
     float min = 0;
     float max = 1;
+    int outChannel = 0; ///< program: channel the message is sent on
 };
 struct SampleState
 {
@@ -230,7 +231,8 @@ static SaveFile captureState()
     for (auto const& b: a.midi.bindings())
         s.bindings.push_back(BindingState{b.channel, b.cc, b.target.action,
                                           b.target.node, b.target.param, b.target.input,
-                                          b.target.output, b.target.min, b.target.max});
+                                          b.target.output, b.target.min, b.target.max,
+                                          b.target.outChannel});
     return s;
 }
 static void applyState(SaveFile const& s)
@@ -279,7 +281,7 @@ static void applyState(SaveFile const& s)
     for (auto const& bs: s.bindings)
         bindings.push_back(midi::Binding{bs.channel, bs.cc,
             midi::LearnTarget{bs.action, bs.node, bs.param, bs.input, bs.output,
-                              bs.min, bs.max}});
+                              bs.min, bs.max, bs.outChannel}});
     a.midi.restore(inputs, outputs, bindings, s.bpm);
 }
 
@@ -343,6 +345,11 @@ struct RouteReq
 };
 struct IntReq
 {
+    int value = 0;
+};
+struct ProgramReq
+{
+    int channel = 0;
     int value = 0;
 };
 struct PlayReq
@@ -558,7 +565,7 @@ public:
         for (auto const& b: app().midi.bindings())
             res.bindings.push_back(BindingState{b.channel, b.cc, b.target.action,
                 b.target.node, b.target.param, b.target.input, b.target.output,
-                b.target.min, b.target.max});
+                b.target.min, b.target.max, b.target.outChannel});
         return res;
     }
     [[=Rest::route("/api/midi/input")]]
@@ -599,6 +606,11 @@ public:
     {
         app().midi.rescan();
     }
+    [[=Rest::route("/api/midi/output/{id}/program")]]
+    void SetProgram(int const& id, ProgramReq const& req)
+    {
+        app().midi.programChange(id, req.channel, req.value);
+    }
 
     // ----- looper pads / clips -----
     [[=Rest::route("/api/clip/{input}/{note}")]]
@@ -622,7 +634,8 @@ public:
     void Learn(BindingState const& req)
     {
         app().midi.learn(midi::LearnTarget{req.action, req.node, req.param,
-                                           req.input, req.output, req.min, req.max});
+                                           req.input, req.output, req.min, req.max,
+                                           req.outChannel});
     }
     [[=Rest::route("/api/learn/cancel")]]
     void LearnCancel()

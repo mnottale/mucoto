@@ -49,6 +49,9 @@ h3 { margin: 8px 0 6px; }
 /* config */
 .config { display: flex; gap: 40px; flex-wrap: wrap; }
 .chip { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }
+.programctl { display: inline-flex; align-items: center; gap: 4px; color: #aaa; font-size: 12px; }
+.programctl input[type=range] { width: 100px; min-width: 40px; }
+.chnum { width: 44px; }
 
 /* graph editor */
 .grapheditor { display: flex; height: 100%; gap: 10px; }

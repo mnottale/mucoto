@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <iostream>
@@ -305,6 +306,13 @@ namespace midi
             it->second.channelRoutes.erase(channel);
         else
             it->second.channelRoutes[channel] = outputId;
+    }
+
+    void MidiEngine::programChange(int outputId, int channel, int program)
+    {
+        std::lock_guard l(_mutex);
+        sendToOutput(outputId, 0xC0, std::clamp(channel, 0, 15),
+                     std::clamp(program, 0, 127), 0);
     }
 
     // ---------- learn ----------
@@ -795,6 +803,12 @@ namespace midi
         {
             if (auto node = _audio.graph().node(t.node))
                 node->setParam(t.param, t.min + (t.max - t.min) * value / 127.f);
+        }
+        else if (t.action == "program")
+        {
+            int prog = std::clamp((int)std::lround(t.min + (t.max - t.min) * value / 127.f),
+                                  0, 127);
+            sendToOutput(t.output, 0xC0, std::clamp(t.outChannel, 0, 15), prog, 0);
         }
         else if (t.action == "default_route")
         {

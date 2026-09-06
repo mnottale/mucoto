@@ -1,6 +1,37 @@
 import React, { useEffect, useState } from 'react'
 import { get, post, COLOR_CSS, PALETTE } from './api.js'
 
+// program change slider for one midi output, cc learnable
+function ProgramControl({ output, onError }) {
+  const [program, setProgram] = useState(0)
+  const [channel, setChannel] = useState(0)
+
+  const send = (value) => {
+    setProgram(value)
+    post(`/api/midi/output/${output.id}/program`,
+      { channel, value: parseInt(value) }).catch(onError)
+  }
+  const learn = () =>
+    post('/api/learn', { action: 'program', output: output.id,
+      outChannel: channel, min: 0, max: 127 }).catch(onError)
+
+  return (
+    <span className="programctl" title="program change">
+      pgm
+      <input type="range" min={0} max={127} value={program}
+        onChange={(e) => send(e.target.value)} />
+      <input className="pnum" type="number" min={0} max={127} value={program}
+        onChange={(e) => send(e.target.value)} />
+      ch
+      <input className="pnum chnum" type="number" min={0} max={15} value={channel}
+        onChange={(e) => setChannel(parseInt(e.target.value) || 0)} />
+      <button className="learn" title="bind a CC to the program value" onClick={learn}>
+        L
+      </button>
+    </span>
+  )
+}
+
 export default function ConfigPanel({ midi, refresh, onError }) {
   const [ports, setPorts] = useState([])
   const [file, setFile] = useState('')
@@ -68,6 +99,7 @@ export default function ConfigPanel({ midi, refresh, onError }) {
                     style={{ background: COLOR_CSS[PALETTE[idx % PALETTE.length]] }} />
                 </td>
                 <td className={o.connected ? 'dev ok' : 'dev'}>{o.port}</td>
+                <td><ProgramControl output={o} onError={onError} /></td>
                 <td>
                   <button onClick={() => act(post(`/api/midi/output/${o.id}/delete`))}>✕</button>
                 </td>

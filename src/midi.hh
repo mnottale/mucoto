@@ -90,12 +90,13 @@ namespace midi
 
     struct LearnTarget
     {
-        std::string action; ///< node_param, default_route, pad_instrument, pad_recorder, pad_player
+        std::string action; ///< node_param, default_route, pad_instrument, pad_recorder, pad_player, program
         std::string node; ///< node_param / pad_recorder / pad_player
         std::string param; ///< node_param
         int input = -1; ///< default_route
-        int output = -1; ///< default_route / pad_instrument
-        float min = 0, max = 1; ///< node_param value scaling
+        int output = -1; ///< default_route / pad_instrument / program
+        float min = 0, max = 1; ///< node_param / program value scaling
+        int outChannel = 0; ///< program: midi channel the message is sent on
     };
 
     struct Binding
@@ -125,6 +126,7 @@ namespace midi
         void setLooper(int id, bool looper);
         void setDefaultRoute(int inputId, int outputId);
         void setChannelRoute(int inputId, int channel, int outputId);
+        void programChange(int outputId, int channel, int program);
         void rescan(); ///< try to (re)connect configured ports
 
         // learn
