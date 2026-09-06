@@ -72,9 +72,15 @@ h3 { margin: 8px 0 6px; }
   padding: 10px; overflow-y: auto;
 }
 .paramrow { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
-.paramrow label { width: 80px; color: #aaa; font-size: 12px; }
-.paramrow input[type=range] { flex: 1; }
-.pnum { width: 64px; }
+.paramrow label {
+  flex: 0 0 72px; color: #aaa; font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* min-width: 0 lets the slider shrink below its default size so the
+   fixed-width value input and learn button never overflow the pane */
+.paramrow input[type=range] { flex: 1 1 40px; min-width: 40px; }
+.paramrow button { flex: 0 0 auto; }
+.pnum { flex: 0 0 auto; width: 60px; }
 .playerctl { margin: 10px 0; display: flex; gap: 4px; align-items: center; }
 
 /* looper */
