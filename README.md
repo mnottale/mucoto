@@ -11,6 +11,9 @@ Code written from specs by Claude Opus. See prompts.txt for the prompt sequence.
 - MIDI path: inputs and outputs, routing, MIDI learn
 - Looper device: record MIDI or audio samples, edit and play or loop play.
 
+
+<img width="1600" height="753" alt="montage" src="https://github.com/user-attachments/assets/2a0acc43-4873-4102-8f39-bd23edfe56d4" />
+
 ## Build
 
 Backend (needs gcc16 with `-freflection`, alsa, jsoncpp):
