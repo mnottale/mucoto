@@ -3,6 +3,14 @@
 C++26/WebUI MIDI/audio music edition software focused on live performance.
 Full specification in [notes.md](notes.md).
 
+Code written from specs by Claude Opus. See prompts.txt for the prompt sequence.
+
+## Main features
+
+- Audio path: graph of input and output devices, mixers, recorders and effects
+- MIDI path: inputs and outputs, routing, MIDI learn
+- Looper device: record MIDI or audio samples, edit and play or loop play.
+
 ## Build
 
 Backend (needs gcc16 with `-freflection`, alsa, jsoncpp):

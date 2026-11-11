@@ -1,0 +1,3 @@
+[submodule "src/cppgow"]
+	path = src/cppgow
+	url = https://github.com/mnottale/cppgow.git
